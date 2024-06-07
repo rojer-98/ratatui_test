@@ -3,11 +3,14 @@ use std::{
     io,
     path::Path,
     time::{Duration, Instant},
+    usize,
 };
 
 use capstone::prelude::*;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -23,6 +26,7 @@ use xmas_elf::sections;
 use xmas_elf::{header, program, ElfFile};
 
 const X86_CODE: &'static [u8] = include_bytes!("../main.text");
+const X64_CODE: &'static [u8] = b"\x41\xBC\x3B\xB0\x28\x2A\x49\x0F\xC9\x90\x4D\x0F\xAD\xCF\x49\x87\xFD\x90\x48\x81\xD2\x8A\xCE\x77\x35\x48\xF7\xD9\x4D\x29\xF4\x49\x81\xC9\xF6\x8A\xC6\x53\x4D\x87\xED\x48\x0F\xAD\xD2\x49\xF7\xD4\x48\xF7\xE1\x4D\x19\xC5\x4D\x89\xC5\x48\xF7\xD6\x41\xB8\x4F\x8D\x6B\x59\x4D\x87\xD0\x68\x6A\x1E\x09\x3C\x59";
 
 struct App {
     scroll: u64,
@@ -52,10 +56,26 @@ fn run_app<B: Backend>(
                     match key.code {
                         KeyCode::Up => {
                             if app.scroll > 0 {
-                                app.scroll -= 1
+                                let val =
+                                    if key.modifiers == KeyModifiers::CONTROL && app.scroll >= 10 {
+                                        10
+                                    } else {
+                                        1
+                                    };
+
+                                app.scroll -= val
                             }
                         }
-                        KeyCode::Down => app.scroll += 1,
+
+                        KeyCode::Down => {
+                            let val = if key.modifiers == KeyModifiers::CONTROL {
+                                10
+                            } else {
+                                1
+                            };
+
+                            app.scroll += val
+                        }
                         _ => {}
                     }
                 }
@@ -75,9 +95,21 @@ fn ui(f: &mut Frame, app: &App) {
     let block = Block::new().black();
     f.render_widget(block, size);
 
-    let layout = Layout::vertical([Constraint::Fill(1)]).split(size);
+    let o_layout = Layout::vertical([Constraint::Fill(1)]).split(size);
+    let a_layout = Layout::horizontal([Constraint::Percentage(8)]).split(o_layout[0]);
+    let i_layout = Layout::horizontal([Constraint::Percentage(92)]).split(o_layout[0]);
 
-    let text = capstone();
+    let (ci, ads, op) = capstone();
+    let ads = if (size.height - 2) as usize > ads.len() {
+        ads
+    } else {
+        ads[app.scroll as usize..app.scroll as usize + size.height as usize - 2].to_vec()
+    };
+    let op = if (size.height - 2) as usize > op.len() {
+        op
+    } else {
+        op[app.scroll as usize..app.scroll as usize + size.height as usize - 2].to_vec()
+    };
 
     let create_block = |title| {
         Block::bordered()
@@ -88,12 +120,24 @@ fn ui(f: &mut Frame, app: &App) {
             ))
     };
 
-    let paragraph = Paragraph::new(text[app.scroll as usize..].to_vec())
+    let paragraph = Paragraph::new(ads)
         .style(Style::default().fg(Color::Gray))
-        .block(create_block("Default alignment (Left), no wrap"))
-        .left_aligned()
-        .wrap(Wrap { trim: false });
-    f.render_widget(paragraph, layout[0]);
+        .block(create_block("Ads"))
+        .left_aligned();
+
+    f.render_widget(paragraph, a_layout[0]);
+
+    let paragraph = Paragraph::new(op)
+        .style(Style::default().fg(Color::Gray))
+        .block(create_block("Ins"));
+
+    f.render_widget(paragraph, i_layout[0]);
+    let paragraph = Paragraph::default()
+        .style(Style::default().fg(Color::Gray))
+        .block(create_block("X"))
+        .left_aligned();
+
+    f.render_widget(paragraph, o_layout[0]);
 }
 
 fn open_file<P: AsRef<Path>>(name: P) -> Vec<u8> {
@@ -174,8 +218,10 @@ fn group_names(cs: &Capstone, regs: &[InsnGroupId]) -> String {
     names.join(", ")
 }
 
-fn capstone<'a>() -> Vec<Line<'a>> {
-    let mut r = vec![];
+fn capstone<'a>() -> (Line<'a>, Vec<Line<'a>>, Vec<Line<'a>>) {
+    let mut addresses = vec![];
+    let mut opcodes = vec![];
+
     let cs = Capstone::new()
         .x86()
         .mode(arch::x86::ArchMode::Mode64)
@@ -185,12 +231,13 @@ fn capstone<'a>() -> Vec<Line<'a>> {
         .expect("Failed to create Capstone object");
 
     let insns = cs
-        .disasm_all(X86_CODE, 0x1180)
+        .disasm_all(&X86_CODE, 0x1180)
         .expect("Failed to disassemble");
 
-    r.push(Line::from(format!("Found {} instructions", insns.len())));
+    let common_info = Line::from(format!("Found {} instructions", insns.len()));
     for i in insns.as_ref() {
-        r.push(Line::from(format!("{i}")));
+        addresses.push(Line::from(format!("{:#x}", i.address())));
+        opcodes.push(Line::from(format!("{}", i.op_str().unwrap_or_default())));
 
         let detail: InsnDetail = cs.insn_detail(&i).expect("Failed to get insn detail");
         let arch_detail: ArchDetail = detail.arch_detail();
@@ -203,18 +250,9 @@ fn capstone<'a>() -> Vec<Line<'a>> {
             ("write regs:", reg_names(&cs, detail.regs_write())),
             ("insn groups:", group_names(&cs, detail.groups())),
         ];
-
-        for &(ref name, ref message) in output.iter() {
-            //r.push(Line::from(format!("{:4}{:12} {}", "", name, message)));
-        }
-
-        r.push(Line::from(format!("{:4}operands: {}", "", ops.len())));
-        for op in ops {
-            //r.push(Line::from(format!("{:8}{:?}", "", op)));
-        }
     }
 
-    r
+    (common_info, addresses, opcodes)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
