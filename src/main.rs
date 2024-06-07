@@ -1,10 +1,4 @@
-use std::{
-    error::Error,
-    io,
-    path::Path,
-    time::{Duration, Instant},
-    usize,
-};
+use std::{error::Error, io, time::Duration, usize};
 
 use capstone::prelude::*;
 use crossterm::{
@@ -20,10 +14,8 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     terminal::{Frame, Terminal},
     text::{Line, Span},
-    widgets::{Block, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
-use xmas_elf::sections;
-use xmas_elf::{header, program, ElfFile};
 
 const X86_CODE: &'static [u8] = include_bytes!("../main.text");
 const X64_CODE: &'static [u8] = b"\x41\xBC\x3B\xB0\x28\x2A\x49\x0F\xC9\x90\x4D\x0F\xAD\xCF\x49\x87\xFD\x90\x48\x81\xD2\x8A\xCE\x77\x35\x48\xF7\xD9\x4D\x29\xF4\x49\x81\xC9\xF6\x8A\xC6\x53\x4D\x87\xED\x48\x0F\xAD\xD2\x49\xF7\xD4\x48\xF7\xE1\x4D\x19\xC5\x4D\x89\xC5\x48\xF7\xD6\x41\xB8\x4F\x8D\x6B\x59\x4D\x87\xD0\x68\x6A\x1E\x09\x3C\x59";
@@ -95,9 +87,7 @@ fn ui(f: &mut Frame, app: &App) {
     let block = Block::new().black();
     f.render_widget(block, size);
 
-    let o_layout = Layout::vertical([Constraint::Fill(1)]).split(size);
-    let a_layout = Layout::horizontal([Constraint::Percentage(8)]).split(o_layout[0]);
-    let i_layout = Layout::horizontal([Constraint::Percentage(92)]).split(o_layout[0]);
+    let layout = Layout::horizontal([Constraint::Percentage(10), Constraint::Fill(1)]).split(size);
 
     let (ci, ads, op) = capstone();
     let ads = if (size.height - 2) as usize > ads.len() {
@@ -122,88 +112,15 @@ fn ui(f: &mut Frame, app: &App) {
 
     let paragraph = Paragraph::new(ads)
         .style(Style::default().fg(Color::Gray))
-        .block(create_block("Ads"))
-        .left_aligned();
-
-    f.render_widget(paragraph, a_layout[0]);
+        .block(create_block("Ads").borders(Borders::ALL))
+        .centered();
+    f.render_widget(paragraph, layout[0]);
 
     let paragraph = Paragraph::new(op)
         .style(Style::default().fg(Color::Gray))
-        .block(create_block("Ins"));
+        .block(create_block("Ins").borders(Borders::ALL));
 
-    f.render_widget(paragraph, i_layout[0]);
-    let paragraph = Paragraph::default()
-        .style(Style::default().fg(Color::Gray))
-        .block(create_block("X"))
-        .left_aligned();
-
-    f.render_widget(paragraph, o_layout[0]);
-}
-
-fn open_file<P: AsRef<Path>>(name: P) -> Vec<u8> {
-    use std::fs::File;
-    use std::io::Read;
-
-    let mut f = File::open(name).unwrap();
-    let mut buf = Vec::new();
-    assert!(f.read_to_end(&mut buf).unwrap() > 0);
-    buf
-}
-
-fn display_binary_information<P: AsRef<Path>>(binary_path: P) {
-    let buf = open_file(binary_path);
-    let elf_file = ElfFile::new(&buf).unwrap();
-    println!("{}", elf_file.header);
-    header::sanity_check(&elf_file).unwrap();
-
-    let mut sect_iter = elf_file.section_iter();
-    // Skip the first (dummy) section
-    sect_iter.next();
-    println!("sections");
-    for sect in sect_iter {
-        println!("Name: {}", sect.get_name(&elf_file).unwrap());
-        println!("Type: {:?}", sect.get_type());
-        println!("Address: {:#x}", sect.address());
-        // println!("{}", sect);
-        sections::sanity_check(sect, &elf_file).unwrap();
-
-        // if sect.get_type() == ShType::StrTab {
-        //     println!("{:?}", sect.get_data(&elf_file).to_strings().unwrap());
-        // }
-
-        // if sect.get_type() == ShType::SymTab {
-        //     if let sections::SectionData::SymbolTable64(data) = sect.get_data(&elf_file) {
-        //         for datum in data {
-        //             println!("{}", datum.get_name(&elf_file));
-        //         }
-        //     } else {
-        //         unreachable!();
-        //     }
-        // }
-    }
-    let ph_iter = elf_file.program_iter();
-    println!("\nprogram headers");
-    for sect in ph_iter {
-        println!("{:?}", sect.get_type());
-        program::sanity_check(sect, &elf_file).unwrap();
-    }
-
-    match elf_file.program_header(5) {
-        Ok(sect) => {
-            println!("{}", sect);
-            match sect.get_data(&elf_file) {
-                Ok(program::SegmentData::Note64(header, ptr)) => {
-                    println!("{}: {:?}", header.name(ptr), header.desc(ptr))
-                }
-                Ok(_) => (),
-                Err(err) => println!("Error: {}", err),
-            }
-        }
-        Err(err) => println!("Error: {}", err),
-    }
-
-    // let sect = elf_file.find_section_by_name(".rodata.const2794").unwrap();
-    // println!("{}", sect);
+    f.render_widget(paragraph, layout[1]);
 }
 
 /// Print register names
@@ -225,7 +142,7 @@ fn capstone<'a>() -> (Line<'a>, Vec<Line<'a>>, Vec<Line<'a>>) {
     let cs = Capstone::new()
         .x86()
         .mode(arch::x86::ArchMode::Mode64)
-        .syntax(arch::x86::ArchSyntax::Att)
+        .syntax(arch::x86::ArchSyntax::Intel)
         .detail(true)
         .build()
         .expect("Failed to create Capstone object");
