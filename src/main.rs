@@ -1,3 +1,5 @@
+mod object;
+
 use std::{error::Error, io, time::Duration, usize};
 
 use capstone::prelude::*;
@@ -8,6 +10,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use object::check_object;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Layout},
@@ -154,7 +157,11 @@ fn capstone<'a>() -> (Line<'a>, Vec<Line<'a>>, Vec<Line<'a>>) {
     let common_info = Line::from(format!("Found {} instructions", insns.len()));
     for i in insns.as_ref() {
         addresses.push(Line::from(format!("{:#x}", i.address())));
-        opcodes.push(Line::from(format!("{}", i.op_str().unwrap_or_default())));
+        opcodes.push(Line::from(format!(
+            "{} {}",
+            i.mnemonic().unwrap_or_default(),
+            i.op_str().unwrap_or_default()
+        )));
 
         let detail: InsnDetail = cs.insn_detail(&i).expect("Failed to get insn detail");
         let arch_detail: ArchDetail = detail.arch_detail();
@@ -198,5 +205,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{err:?}");
     }
 
+    //check_object();
     Ok(())
 }
