@@ -207,7 +207,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     println!("{err:?}");
     // }
 
-    //check_object();
-    check_keystone();
+    check_object();
+    //check_keystone();
     Ok(())
 }
