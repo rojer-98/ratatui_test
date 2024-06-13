@@ -1,3 +1,4 @@
+mod gimli;
 mod keystone;
 mod object;
 
@@ -11,6 +12,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use gimli::check_gimli;
 use keystone::check_keystone;
 use object::check_object;
 use ratatui::{
@@ -182,7 +184,7 @@ fn capstone<'a>() -> (Line<'a>, Vec<Line<'a>>, Vec<Line<'a>>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // // setup terminal
+    // setup terminal
     // enable_raw_mode()?;
     // let mut stdout = io::stdout();
     // execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -207,7 +209,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     println!("{err:?}");
     // }
 
-    check_object();
+    //check_object();
     //check_keystone();
+    check_gimli().unwrap();
     Ok(())
 }

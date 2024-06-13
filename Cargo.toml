@@ -10,3 +10,4 @@ ratatui = { version = "0.26.3", features = [ "crossterm" ] }
 crossterm = "0.27.0"
 object = "0.36.0"
 keystone-engine = "0.1.0"
+gimli = "0.30.0"
