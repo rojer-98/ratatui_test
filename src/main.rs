@@ -209,8 +209,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     println!("{err:?}");
     // }
 
-    //check_object();
+    check_object();
     //check_keystone();
-    check_gimli().unwrap();
+    //check_gimli().unwrap();
     Ok(())
 }
